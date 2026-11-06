@@ -16,6 +16,7 @@ sys.path.insert(0, HERE)
 
 import draw as d  # noqa: E402
 import fenn  # noqa: E402
+import installer  # noqa: E402
 import winutil  # noqa: E402
 import ytdlp  # noqa: E402
 
@@ -68,6 +69,7 @@ dirty = False
 clear_armed = 0.0
 notice = ""
 busy_tool = False
+installing = None   # {"text", "frac"} while Grab's installer runs
 badge = ("stale",)  # unknown: the first update clears whatever an older run left on the island
 thumb_q = queue.Queue()
 
@@ -449,12 +451,60 @@ def read_version():
 
 
 def install_tools():
-    tool_job(["winget", "install", "--id", "yt-dlp.yt-dlp", "-e", "--source", "winget", "--disable-interactivity"],
-             "yt-dlp is installed.")
+    """Downloads whatever is missing of yt-dlp, ffmpeg and Deno into Grab's
+    own folder, checked against their published checksums."""
+    global installing, notice
+    names = tools.missing()
+    if not names or installing:
+        return
+    installing = {"text": "Starting…", "frac": 0.0}
+    notice = ""
+
+    def progress(text, frac):
+        installing.update(text=text, frac=frac)
+        mark()
+
+    def work():
+        try:
+            installer.install(names, tools.bin, progress)
+            app._inbox.put({"type": "installed", "ok": True})
+        except Exception as e:
+            app._inbox.put({"type": "installed", "ok": False, "error": str(e) or type(e).__name__})
+
+    threading.Thread(target=work, daemon=True).start()
+
+
+@app.on_message("installed")
+def on_installed(msg):
+    global tools, installing, notice
+    installing = None
+    tools = ytdlp.Tools(app.data_dir)
+    threading.Thread(target=read_version, daemon=True).start()
+    if msg["ok"] and not tools.missing():
+        notice = "Installed. Grab is ready."
+    elif msg["ok"]:
+        notice = "Installed, but " + ", ".join(tools.missing()) + " still can't be found."
+    else:
+        notice = "Couldn't install: " + msg["error"][:200] + " Check the internet connection and try again."
+    pump()
+    draw()
+
+
+def missing_words(names):
+    words = {"yt-dlp": "yt-dlp", "ffmpeg": "ffmpeg", "deno": "Deno"}
+    names = [words[n] for n in names]
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def install_label():
+    names = tools.missing()
+    return f"Install {missing_words(names)} ({installer.size_of(names) / 1e6:.0f} MB)"
 
 
 def update_tools():
-    if tools.via_winget:
+    if tools.exe and tools.where(tools.exe) == "Grab's copy":
+        tool_job([tools.exe, "-U"], "yt-dlp is up to date.")
+    elif tools.via_winget:
         tool_job(["winget", "upgrade", "--id", "yt-dlp.yt-dlp", "-e", "--source", "winget",
                   "--disable-interactivity"], "yt-dlp is up to date.")
     elif tools.cmd and tools.exe:
@@ -489,15 +539,39 @@ def heading(title, items, target):
     return c.node("head-" + target)
 
 
+def install_card():
+    """Progress while installing, or what's missing with an Install button."""
+    if installing:
+        return fenn.card([fenn.column([
+            fenn.text(installing["text"], bold=True),
+            fenn.progress(installing["frac"], color=d.ACCENT, width=content_w() - 30),
+            fenn.text("From the official GitHub releases, checked against their published checksums.",
+                      size="small", color="dim", wrap=True)], gap=6)], padding=12)
+    names = tools.missing()
+    why = {"yt-dlp": "Grab downloads with yt-dlp.",
+           "ffmpeg": "Without ffmpeg, videos above 720p, audio conversion and embedded thumbnails don't work.",
+           "deno": "Without Deno, YouTube offers only some formats."}
+    lines = [why[n] for n in names]
+    return fenn.card([fenn.column([
+        fenn.row([fenn.icon("warning-circle", size=15, color=d.ORANGE, fill=True),
+                  fenn.text(f"{missing_words(names)} {'is' if len(names) == 1 else 'are'} missing", bold=True)], gap=6),
+        fenn.text(" ".join(lines) + " Grab can download "
+                  + ("it" if len(names) == 1 else "them") + " into its own folder; nothing is installed system-wide.",
+                  size="small", color="dim", wrap=True),
+        fenn.button("install", label=install_label(), icon="download-simple", primary=True),
+    ] + ([fenn.text(notice, size="small", color=d.RED, wrap=True)] if notice.startswith("Couldn't") else []),
+        gap=8)], padding=12)
+
+
 def home_view():
     """The Add button, the counters, and what's going on right now."""
     missing = None if tools.cmd else "yt-dlp isn't installed yet."
     c = d.home_top(content_w(), counts(), app.dark, missing)
     canvases["home"] = c
     parts = [c.node("home")]
+    if installing or tools.missing():
+        parts.append(install_card())
     if missing:
-        parts.append(fenn.text(notice or "Grab downloads with yt-dlp. The button installs it, with ffmpeg and Deno, "
-                                         "from winget (about 150 MB).", size="small", color="dim", wrap=True))
         return fenn.column(parts, gap=8, scroll=True, id="home")
     active = [j for j in jobs if j["status"] in ("downloading", "paused")]
     waiting = [j for j in jobs if j["status"] == "queued"]
@@ -764,14 +838,12 @@ def swatch_row():
 
 def settings_view():
     cw = content_w()
-    tool_lines = []
-    if tools.cmd:
-        tool_lines.append(f"yt-dlp {tools.version or '…'}" + (" (winget)" if tools.via_winget else ""))
-    else:
-        tool_lines.append("yt-dlp isn't installed.")
-    tool_lines.append("ffmpeg: found" if tools.ffmpeg else
-                      "ffmpeg: missing. Videos above 720p and audio conversion need it.")
-    tool_lines.append("Deno: found" if tools.deno else "Deno: missing. YouTube may only offer some formats.")
+    tool_lines = [
+        f"yt-dlp {tools.version or '…'} · {tools.where(tools.exe)}" if tools.cmd else "yt-dlp: missing",
+        f"ffmpeg: {tools.where(tools.ffmpeg)}" + ("" if tools.ffmpeg else
+                                                   ". Videos above 720p and audio conversion need it."),
+        f"Deno: {tools.where(tools.deno)}" + ("" if tools.deno else ". YouTube may only offer some formats."),
+    ]
     parts = [
         section("Downloads"),
         labeled("Save to", fenn.text(d.fit(folder(), 12.5, cw - 150), color="dim")),
@@ -803,9 +875,9 @@ def settings_view():
         fenn.divider(),
         section("yt-dlp"),
         *[fenn.text(t, size="small", color="dim") for t in tool_lines],
-        fenn.row([fenn.button("update", label="Update yt-dlp" if tools.cmd else "Install yt-dlp",
-                              icon="arrow-clockwise" if tools.cmd else "download-simple"),
-                  fenn.button("sites", label="Supported sites", icon="globe")], gap=8),
+        *([install_card()] if installing or tools.missing() else []),
+        fenn.row(([fenn.button("update", label="Update yt-dlp", icon="arrow-clockwise")] if tools.cmd else [])
+                 + [fenn.button("sites", label="Supported sites", icon="globe")], gap=8),
     ]
     if notice:
         parts.append(fenn.text(notice, size="small", color="dim", wrap=True))
@@ -927,7 +999,7 @@ def on_canvas(cid, x, y):
     elif act.startswith("color:"):
         settings["color"] = act[6:]
         save_settings()
-    elif act == "install" and not busy_tool:
+    elif act == "install":
         install_tools()
 
 
@@ -1091,7 +1163,9 @@ def on_event(msg):
         settings[eid] = bool(value)
         save_settings()
     elif eid == "update" and not busy_tool:
-        update_tools() if tools.cmd else install_tools()
+        update_tools()
+    elif eid == "install":
+        install_tools()
     elif eid == "sites":
         app.open(SITES)
     elif eid == "clear":

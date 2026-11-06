@@ -29,11 +29,17 @@ STAGES = {  # yt-dlp's post-processors, as words
 
 # ---- finding the tools
 
+def own_bin(data_dir):
+    """Where Grab's own installer puts yt-dlp, ffmpeg and Deno."""
+    return os.path.join(data_dir, "bin")
+
+
 def _extra_dirs(data_dir):
-    """Where winget puts yt-dlp, ffmpeg and Deno, for when Fenn was started
-    before they were installed (so they aren't on its PATH yet)."""
+    """Grab's own copies, then where winget puts yt-dlp, ffmpeg and Deno (for
+    when Fenn was started before they were installed, so they aren't on its
+    PATH yet)."""
     base = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "WinGet")
-    dirs = [data_dir, os.path.join(base, "Links")]
+    dirs = [own_bin(data_dir), data_dir, os.path.join(base, "Links")]
     for pat in ("yt-dlp.yt-dlp_*", "yt-dlp.FFmpeg_*", "Gyan.FFmpeg*", "BtbN.FFmpeg*", "DenoLand.Deno_*"):
         for d in glob.glob(os.path.join(base, "Packages", pat)):
             dirs.append(d)
@@ -44,13 +50,20 @@ def _extra_dirs(data_dir):
 class Tools:
     def __init__(self, data_dir):
         self.env = dict(os.environ)
-        self.env["PATH"] = os.pathsep.join(_extra_dirs(data_dir) + [self.env.get("PATH", "")])
+        self.bin = own_bin(data_dir)
+        if os.environ.get("GRAB_OWN_TOOLS_ONLY"):  # for testing the installer on a PC that has them already
+            self.env["PATH"] = os.pathsep.join([self.bin, os.path.join(os.environ.get("SystemRoot", r"C:\Windows"),
+                                                                       "System32")])
+        else:
+            self.env["PATH"] = os.pathsep.join(_extra_dirs(data_dir) + [self.env.get("PATH", "")])
         self.env["PYTHONIOENCODING"] = "utf-8"
         self.env["PYTHONUTF8"] = "1"
         path = self.env["PATH"]
         exe = shutil.which("yt-dlp", path=path)
         if exe:
             self.cmd = [exe]
+        elif os.environ.get("GRAB_OWN_TOOLS_ONLY"):
+            self.cmd = None
         else:
             try:
                 import importlib.util
@@ -62,6 +75,18 @@ class Tools:
         self.deno = shutil.which("deno", path=path)
         self.via_winget = bool(exe and "WinGet" in exe)
         self.version = None
+
+    def missing(self):
+        """What Grab's installer would add: yt-dlp, ffmpeg and/or deno."""
+        return [n for n, have in (("yt-dlp", self.cmd), ("ffmpeg", self.ffmpeg), ("deno", self.deno)) if not have]
+
+    def where(self, path):
+        """Where a tool came from, in words."""
+        if not path:
+            return "missing"
+        if os.path.normcase(path).startswith(os.path.normcase(self.bin)):
+            return "Grab's copy"
+        return "winget" if "WinGet" in path else "installed on this PC"
 
     def read_version(self):
         if not self.cmd:

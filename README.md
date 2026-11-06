@@ -44,19 +44,25 @@ on where they left off the next time Grab starts.
 
 ## Requirements
 
-Windows, Python 3.8+ (standard library only; Fenn can install Python for you),
-and three free programs that Grab finds wherever winget put them:
+Windows and Python 3.8+ (standard library only; Fenn can install Python for
+you). Grab also needs three free programs, and installs them itself:
 
-```powershell
-winget install yt-dlp.yt-dlp
-```
+- **yt-dlp**, which does the downloading;
+- **ffmpeg**, to merge video and audio above 720p, convert audio and embed
+  thumbnails;
+- **Deno**, which YouTube needs to unlock most formats.
 
-That one command also installs **ffmpeg** (to merge video and audio above 720p
-and to convert audio) and **Deno** (YouTube needs it to unlock most formats).
-If yt-dlp is missing, Grab's home screen has a button that runs the same command.
+If any is missing, Grab's home screen says so and offers one **Install**
+button. It downloads them from their official GitHub releases (yt-dlp,
+yt-dlp's FFmpeg builds and Deno; about 158 MB, 300 MB unpacked), checks each
+file against the SHA-256 checksum its project publishes, and keeps them in
+Grab's own data folder (`bin/`). No admin rights or winget needed, and nothing
+is installed system-wide. Copies you already have (from winget, for example)
+are used instead, with no download.
 
 Keep yt-dlp up to date (Settings > Update yt-dlp): sites change often, and an
-old yt-dlp gets "HTTP Error 403" from YouTube.
+old yt-dlp gets "HTTP Error 403" from YouTube. The button uses yt-dlp's own
+updater for Grab's copy and winget for a winget copy.
 
 ## Install
 
@@ -69,14 +75,16 @@ its full height.
 
 ## Privacy and network
 
-Grab itself talks to no server. yt-dlp contacts the sites of the links you
+Grab talks to GitHub only when you click Install (and yt-dlp's updater when
+you click Update). yt-dlp contacts the sites of the links you
 add (and SponsorBlock's server when you choose to cut out sponsor segments);
 thumbnails come from the same sites. The paste button reads the clipboard only
 when you click it. With a browser chosen under Sign-in, yt-dlp reads that
 browser's cookies for the sites you download from.
 
 Kept in the plugin's data folder (`FENN_DATA_DIR`): `settings.json`,
-`jobs.json` (the queue and finished downloads), `history.json`, `thumbs/`
+`jobs.json` (the queue and finished downloads), `history.json`, `bin/` (yt-dlp,
+ffmpeg and Deno, if Grab installed them), `thumbs/`
 (thumbnails), `logs/` (yt-dlp's output per download), and an empty
 `reloaded` marker (the plugin restarts itself when its files change, at most
 every 25 seconds).
@@ -90,14 +98,22 @@ copyrighted material may need the owner's permission.
 links, building the command, following progress), `draw.py` (the sidebar,
 home screen and other canvas drawing), `winutil.py` (clipboard, Downloads
 folder, Explorer, and a job object so cancelling stops ffmpeg too),
+`installer.py` (downloading and checking yt-dlp, ffmpeg and Deno),
 `pick_folder.ps1` (Windows' folder picker), `fenn.py` (Fenn's plugin helper).
 
 ## License
 
 MIT, see [LICENSE](LICENSE). yt-dlp is released into the public domain
-(Unlicense); ffmpeg and Deno have their own licenses.
+(Unlicense); ffmpeg (the GPL build from yt-dlp/FFmpeg-Builds) and Deno (MIT)
+have their own licenses and are downloaded from their projects, not shipped
+with Grab.
 
 ## Changelog
+
+**1.1.0**
+- Grab installs what it needs itself: one Install button downloads yt-dlp,
+  ffmpeg and Deno from their official releases, checks their checksums, and
+  keeps them in Grab's folder. No winget or admin rights needed.
 
 **1.0.0**
 - First release.

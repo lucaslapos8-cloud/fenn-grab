@@ -10,4 +10,4 @@ run = ["python", "main.py"]
 page_size = [640, 480]
 description = "Download video and audio from YouTube and other sites with yt-dlp. Queue, progress, history, up to 4K."
 author = "Lujlap"
-version = "1.0.0"
+version = "1.1.0"

@@ -182,7 +182,7 @@ def home_top(width, counts, dark, missing=None):
     """The big Add button (or Install, without yt-dlp) and three counters."""
     c = Canvas(width, 122)
     if missing:
-        pill_button(c, width / 2, 0, "Install yt-dlp with winget", "download-simple", "install", w=width, h=46)
+        pill_button(c, width / 2, 0, "Install what Grab needs", "download-simple", "install", w=width, h=46)
     else:
         pill_button(c, width / 2, 0, "Add New Download", "plus-circle", "add", w=width, h=46)
     tiles = [("downloading", "Downloading", BLUE), ("queued", "In queue", ORANGE), ("completed", "Completed", GREEN)]
