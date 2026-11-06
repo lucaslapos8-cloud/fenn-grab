@@ -1,0 +1,13 @@
+# Download video and audio from YouTube and 1,800 other sites with yt-dlp:
+# paste a link, pick video or audio, the file type and quality, and Grab
+# queues it, shows the progress on the tile and keeps a history.
+# Python, standard library only; uses yt-dlp, ffmpeg and Deno (winget).
+id = "grab"
+name = "Grab"
+icon = "download-simple"
+size = "wide"
+run = ["python", "main.py"]
+page_size = [640, 480]
+description = "Download video and audio from YouTube and other sites with yt-dlp. Queue, progress, history, up to 4K."
+author = "Lujlap"
+version = "1.0.0"
